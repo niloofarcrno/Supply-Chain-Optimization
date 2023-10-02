@@ -12,14 +12,16 @@ os. chdir('/Users/niloofarakbarian/Library/CloudStorage/OneDrive-UBC/PhD-UT/Opti
 
 #define each sheet
 data = pd.read_excel('Data.xlsx', sheet_name='Path', index_col=[0,1])
+data3 = pd.read_excel('Data.xlsx', sheet_name='Path2', index_col=[0,1])
+data4 = pd.read_excel('Data.xlsx', sheet_name='Path3', index_col=[0,1])
 data2 = pd.read_excel('Data.xlsx', sheet_name='Demand', index_col=[0,1])
-
+data6 = pd.read_excel('Data.xlsx', sheet_name='Budget', index_col=[0])
 #define sets
 i_set=[1,2,3]
 j_set=[1,2,3]
 l_set=[1,2,3,4,5,6,7,8]
 k_set=[1,2,3,4,5,6,7,8]
-r_set=[1,2]
+r_set=[1,2]# 1: truck, 2: train 
 t_set=[1,2,3,4,5]
 
 
@@ -32,12 +34,16 @@ for i, j in data.index:
 for k, t in data2.index:
     data_2=data2.loc[(k, t), 'demand']
     
+     
+for t in data6.index:
+    data_6=data6.loc[(t), 'Budget']
     
+       
 
 model = pyo.ConcreteModel()
 
 
-model.C = pyo.Var(i_set,all_t_set, bounds=(0,None)) #amount of cultivated 
+model.C = pyo.Var(i_set, t_set, bounds=(0,None)) #amount of cultivated 
 C = model.C
 
 
@@ -50,149 +56,208 @@ IB = model.IB
 model.Q = pyo.Var(i_set,j_set,t_set, bounds=(0,None))#amount transported from supplier to collection center 
 Q = model.Q
 
-model.QBB= pyo.Var(j_set,l_set,r_set,t_set, bounds=(0,None))
-QBB = model.QBB
+model.QBC= pyo.Var(j_set,l_set,t_set, bounds=(0,None))
+QBC = model.QBC
 
-model.QD = pyo.Var(l_set, k_set,r_set,t_set, bounds=(0,None))
-QD = model.QD
+model.QBB = pyo.Var(l_set, k_set,r_set,t_set, bounds=(0,None))
+QBB = model.QBB
 
 model.P = pyo.Var(l_set,t_set, bounds=(0,None))
 P = model.P
 
 
-model.Z = pyo.Var(i_set,t_set, within=Binary)
+model.Z = pyo.Var(i_set, within=Binary)
 Z = model.Z
 
-model.Y= pyo.Var(j_set,t_set,  within=Binary)
+model.Y= pyo.Var(j_set,  within=Binary)
 Y = model.Y
 
-model.X = pyo.Var(l_set,t_set, within=Binary)
+model.X = pyo.Var(l_set, within=Binary)
 X= model.X
 
-model.CE = pyo.Var(j_set,all_t_set, bounds=(0,None))
-CE= model.CE
 
+model.SP = pyo.Var(j_set,t_set, bounds=(0,None))
+SP= model.SP
 
-model.WL = pyo.Var(l_set,all_t_set, bounds=(0,None))
-WL= model.WL
+model.HC= pyo.Var(i_set,t_set, bounds=(0,None))
+HC= model.HC
 #model.B = pyo.Var(i_set,t_set, within=Binary)
 #B= model.B
 
 #defining parameters
-Conv = 0.9
-Yield= 12
-LC=3000
-LW=5000
+Conv = 0.34
+Yield= 13
+M=10000000
+TC=0.05
+FBC=0.8882
+FCC=0.0063
+VCB=7.5
+CSP=0.015
+Landa=0.135
+CAPC=1500000
+IBB=0.027
+VWL=0.001
+ISB=0.005
+CAPB=2000000
+HR=1.18
+Teta=0.08
 #defining parameters
-model.Land = pyo.Param(i_set, initialize={1: 1000000, 2: 1000000, 3:1000000})  # Y
+model.Land = pyo.Param(i_set, initialize={1: 1000000, 2: 1000000, 3:700000})  # Y
 Land=model.Land
+
+model.FCL= pyo.Param(i_set, initialize={1: 1.45, 2: 1.52, 3:1.56})  # Y
+FCL=model.FCL
+
+model.TCR=pyo.Param(r_set, initialize={1:0.4, 2:0.2})
+TCR=model.TCR
+
+model.VCC=pyo.Param(i_set, initialize={1:0.83, 2:0.9, 3: 0.87})
+VCC=model.VCC
 
 #Objective function (cost minimization)
 
-cost=sum(200*model.Q[i,j,t]*data.distance[i,j] for i in data.index for j in data.index for i in i_set for j in j_set for t in t_set)+sum(100 * model.C[i,t] + 20 * model.P[l,t] + 20* model.P[l,t] for i in i_set for l in l_set for t in t_set)+sum(630*model.Y[j,t]+882000*X[l,t]+ 
-500*model.Z[i,t] for i in i_set for l in l_set for j in j_set for t in t_set)+ sum(100*model.I[j,t]+50*model.IB[l,t] for l in l_set for j in j_set for t in t_set)
-+sum(1000*CE[j,t] for j in j_set for t in t_set)
+cost=(
+sum(TC*model.Q[i,j,t]*data.distance[i,j] for i in i_set for j in j_set for t in t_set)
++sum(TC*model.QBC[j,l,t]*data3.distance[j,l] for j in j_set for l in l_set for r in r_set for t in t_set)
++sum(TCR[r]*model.QBB[l,k,r,t]*data4.distance[l,k] for l in l_set for k in k_set for r in r_set for t in t_set)
++sum(VCC[i]*C[i,t] for i in i_set for t in t_set)
++sum(VCB * P[l,t]  for l in l_set for t in t_set)
++sum(FCC*Y[j] for j in j_set)
++sum(FBC*X[l] for l in l_set)
++sum(FCL[i]*Z[i] for i in i_set)
++sum(ISB*I[j,t] for j in j_set for t in t_set)
++sum(IBB*IB[l,t] for l in l_set for t in t_set)
++sum(HR*HC[i,t] for i in i_set for t in t_set)
+)
+#constraintsS
 
-#constraints
-#I_sum = sum([I[s,j,t] for s in s_set])
+#land availablity /
+model.landav = pyo.Constraint(i_set,t_set, rule=lambda model, i, t: (
+   HC[i,t]== Yield*C[i,t]
+))
 
-#model.balance1 = pyo.Constraint(expr = I_sum <= CE[j,t])
+#balance constraint
+model.balance11 = pyo.Constraint(i_set, t_set, rule=lambda model, i, t: (
+    sum(Q[i,j,t] for j in j_set)== HC[i,t]
+))
 
-#land availablity 
-model.land = pyo.Constraint(i_set,t_set, rule=lambda model, i, t: (
-   C[i, t]<= Land[i]*Z[i,t]
+#cultivation limitation
+model.capacityCollLimit22 = pyo.Constraint(i_set,t_set, rule=lambda model, i,t: (
+    C[i,t]>= Land[i]*Z[i] 
 ))
 
 
-model.capacity = pyo.Constraint(i_set, rule=lambda model, i: (
-   C[i, 1]>= C[i,0] 
-))
+#Collection switchgrass
+model.coll=pyo.Constraint(j_set, t_set, rule=lambda model, j,t: (
+   sum(Q[i,j,t] for i in i_set)== SP[j,t]  
+    ))
+#Collection switchgrass capacity 
 
-model.capacity2 = pyo.Constraint(i_set,t_set, rule=lambda model, i, t: (
-   C[i, t]>= C[i, t-1] 
-))
-
-
-#Collection capacity 
-model.capacitycoll = pyo.Constraint(j_set, rule=lambda model, j: (
-   CE[j, 1]>= CE[j,0] 
-))
-
-model.capacitycoll2 = pyo.Constraint(j_set,t_set, rule=lambda model, j, t: (
-   CE[j, t]>= CE[j, t-1] 
-))
-
-#Biorefinery capacity 
-model.capacitybioref = pyo.Constraint(l_set, rule=lambda model, l: (
-   WL[l, 1]>= WL[l,0] 
-))
-
-model.capacitybioref2 = pyo.Constraint(l_set,t_set, rule=lambda model, l, t: (
-   WL[l, t]>= WL[l, t-1] 
-))
-
-#collection limitation
-model.capacityCollLimit = pyo.Constraint(j_set,t_set, rule=lambda model, j, t: (
-   CE[j, t]>= LC 
-))
-
-model.capacityCollLimit2 = pyo.Constraint(j_set,t_set, rule=lambda model, j, t: (
-   CE[j, t]<= 100000*Y[j,t]
-))
+model.capcoll=pyo.Constraint(j_set, rule=lambda model, j: (
+  SP[j,t] <=CAPC*Y[j]
+  ))
 
 
-#biorefinery limitation
-model.capacitybiorefLimit = pyo.Constraint(l_set,t_set, rule=lambda model, j, t: (
-  WL[l, t]>= LW
-))
+#Collection switchgrass capacity 2
 
-model.capacitybiorefLimit2= pyo.Constraint(l_set,t_set, rule=lambda model, j, t: (
-   WL[l, t]<= 100000*X[l,t]
-))
+model.capcoll2=pyo.Constraint(j_set, t_set, rule=lambda model, j,t: (
+  SP[j,t] >=Landa*CAPC*Y[j]
+  ))  
+  
+#biorefinery capacity 
 
-#biomass yield
-model.yiled = pyo.Constraint(i_set, t_set, rule=lambda model, i, t: (
-    sum(Q[i,j,t] for j in j_set) ==  C[i,t]*Yield
-))
-#Collection capacity
-model.harves= pyo.Constraint(j_set, t_set, rule=lambda model, j, t: (
-    I[j,t] <= CE[j,t] 
-))
+model.biorefcap=pyo.Constraint(l_set, t_set, rule=lambda model, l,t: (
+  P[l,t] >=Teta*CAPB*X[l]
+  ))  
 
-#Biorefinery capacity
-model.bioref= pyo.Constraint(l_set, t_set, rule=lambda model, l, t: (
-    IB[l,t] <= WL[j,t] 
-))
 
+#biorefinery capacity 2
+
+model.biorefcap2=pyo.Constraint(l_set, t_set, rule=lambda model, l,t: (
+  P[l,t] <= CAPB*X[l]
+  ))  
+
+#bioethanol production
+
+model.product=pyo.Constraint(l_set, t_set, rule=lambda model, l,t: (
+  P[l,t] == Conv*sum(QBC[j,l,t] for j in j_set)
+  ))  
 
 #biorefinery inventory
 model.C1_initial = pyo.Constraint(l_set, rule=lambda model, l: (
-     IB[l, 1] == IB[l, 0] + P[l, 1] - sum(QD[l, k, r, 1] for k in k_set for r in r_set)
+     IB[l, 1] == IB[l, 0] + P[l, 1] - sum(QBB[l, k, r, 1] for k in k_set for r in r_set)
 ))
 
 # Constraints for the remaining time periods (t > 0)
 model.C1 = pyo.Constraint(l_set, t_set, rule=lambda model, l, t: (
-    IB[l, t] == IB[l, t-1] + P[l, t] - sum(QD[l, k, r, t] for k in k_set for r in r_set)
+    IB[l, t] == IB[l, t-1] + P[l, t]- sum(QBB[l, k, r, t] for k in k_set for r in r_set)
 ))
 
 #Collection inventory
 model.Collectinv = pyo.Constraint(j_set, rule=lambda model, j: (
-     I[j, 1] == I[j, 0] + sum(Q[i,j,1]for i in i_set)-sum(QBB[j, l, r, 1] for l in l_set for r in r_set)
+     I[j, 1] == I[j, 0] + SP[j,1]-sum(QBC[j,l,1]for l in l_set)
 )) 
 
 model.Collectinv2 = pyo.Constraint(j_set,t_set, rule=lambda model, j, t: (
-     I[j, t] == I[j, t-1] + sum(Q[i,j,t] for i in i_set)-sum(QBB[j, l, r, t] for l in l_set for r in r_set)
+     I[j, t] == I[j, t-1] + + SP[j,t]-sum(QBC[j,l,t]for l in l_set)
 )) 
+
+#biorefinery balance
+
+model.Binput = pyo.Constraint(l_set,t_set, rule=lambda model, l,t : (
+    sum(QBB[l, k, r, t] for k in k_set for r in r_set) <=  P[l,t] )
+)
+
+#collection balance
+
+model.collinput = pyo.Constraint(j_set,t_set, rule=lambda model, j,t : (
+    sum(QBC[j,l, t] for l in l_set) <=  SP[j,t] )
+)
+
+#Inventory capacity
+model.invswitch= pyo.Constraint(l_set, t_set, rule=lambda model, l, t: (
+    I[j,t] <= CAPC*Y[j]
+))
+
+
+#Inventory capacity bioref
+model.invbioref= pyo.Constraint(l_set, t_set, rule=lambda model, l, t: (
+    IB[l,t] <= CAPB*X[l]
+))
 
 
 #demand satisfaction
 model.C3 = pyo.Constraint(k_set, t_set, rule=lambda model, k, t: (
-    sum(QD[l,k,r,t] for r in r_set for l in l_set) >= data2.demand[k,t])
+    sum(QBB[l,k,r,t] for r in r_set for l in l_set) == data2.demand[k,t])
 )
 
-model.C5 = pyo.Constraint(t_set, l_set, rule=lambda model, t, l: (
-    P[l,t] == sum(QBB[j,l,r,t]*Conv for j in j_set for r in r_set)
-))
+
+
+# #installation 
+# model.C9 = pyo.Constraint(l_set, k_set,r_set, t_set, rule=lambda model, l, k, r, t: (
+#     QD[l,k,r,t]<=M*X[l,t])
+# )
+
+# model.C10 = pyo.Constraint(l_set, k_set,r_set, t_set, rule=lambda model, l, k, r, t: (
+#    Q[i,j,t]<=M*Y[j,t])
+# )
+
+# def capacity_coll_limit_rule_positive(model, j, t):
+#     return Y[j, t] >= CE[j, t]
+
+# def capacity_coll_limit_rule_non_positive(model, j, t):
+#     return Y[j, t] == 0
+
+# model.capacityCollLimit2_positive = pyo.Constraint(j_set, t_set, rule=capacity_coll_limit_rule_positive)
+# model.capacityCollLimit2_non_positive = pyo.Constraint(j_set, t_set, rule=capacity_coll_limit_rule_non_positive)
+
+# model.capacity = pyo.Constraint(i_set, rule=lambda model, i: (
+#     C[i, 1]>= C[i,0]
+# ))
+
+# model.capacity2 = pyo.Constraint(i_set,t_set, rule=lambda model, i, t: (
+#     C[i, t]>= C[i, t-1] 
+# ))
 
 #Solving model                
 model.obj = pyo.Objective(expr= cost, sense=minimize)
@@ -208,17 +273,8 @@ obj= pyo.value(model.obj)
 #     for index in var:
 #         solution_data['Variable_Name'].append(var[index].name)
 #         solution_data['Value'].append(value(var[index]))
-
 # Create a DataFrame from the solution data
 # solution_df = pd.DataFrame(solution_data)
-
-model.pprint()
-
-for i in i_set:
-    for t in t_set:
-        C_value=model.C[i, t].value
-
-    print("c",C_value)
 
 obj=model.obj()
 print(obj)
@@ -226,7 +282,7 @@ print(obj)
  
 for i in i_set:
     for t in t_set:
-        print(f"C[{i}, {t}] = {model.C[i, t].value}")
+        print(f"C[{i,t}) = {model.C[i,t].value}")
 
 for l in l_set:
     for t in t_set:
@@ -237,28 +293,81 @@ for l in l_set:
             print(f"I[{j}, {t}] = {model.I[j,t].value}")
             
 for l in l_set:
-    for t in t_set:
-        print(f"X[{l}, {t}] = {model.X[l, t].value}")
+        print(f"X[{l}] = {model.X[l].value}")
+                
     
+# for l in l_set:
+#     for k in k_set:
+#         for r in r_set:
+#             for t in t_set:
+#                 print(f"QD[{l}, {k},{r}, {t}] = {model.QD[l, k, r, t].value}") 
+
+
+
+# Create a dictionary to store the components of Transp
+transp_components = {}
+
+# Calculate the components and store them in the dictionary
+for i in i_set:
+    for j in j_set:
+        for t in t_set:
+            transp_components[(i, j, t)] = TC * model.Q[i, j, t].value * data.distance[i, j]
+
+for j in j_set:
+    for l in l_set:
+        for r in r_set:
+            for t in t_set:
+                transp_components[(j, l, t)] = TC * model.QBC[j, l, t].value * data3.distance[j, l]
+
 for l in l_set:
     for k in k_set:
         for r in r_set:
             for t in t_set:
-                print(f"QD[{l}, {k},{r}, {t}] = {model.QD[l, k, r, t].value}") 
-           
+                transp_components[(l, k, r, t)] = TCR[r] * model.QBB[l, k, r, t].value * data4.distance[l, k]
+
+# Calculate the total Transp value by summing up the components
+total_transp_value = sum(transp_components.values())
+
+# Print the total Transp value
+print("Total Transp Value:", total_transp_value)
+
+# Create a DataFrame with the total Transp value
+
+
+# Save the DataFrame to an Excel file
+
+
 # Create empty DataFrames to store the variables
 data_C = {'Variable': [], 'Value': []}
 data_P = {'Variable': [], 'Value': []}
 data_I = {'Variable': [], 'Value': []}
+data_IB = {'Variable': [], 'Value': []}
 data_X = {'Variable': [], 'Value': []}
-data_QD = {'Variable': [], 'Value': []}
-
+data_QBB = {'Variable': [], 'Value': []}
+data_CE = {'Variable': [], 'Value': []}
+data_Q = {'Variable': [], 'Value': []}
+data_QBC = {'Variable': [], 'Value': []}
+data_obj = {'Value': []}
+data_transp = {'Value': []}
+data_SP = {'Variable': [], 'Value': []}
+data_Y= {'Variable': [], 'Value': []}
+data_Z = {'Variable': [], 'Value': []}
+data_HC={'Variable': [], 'Value': []}
 # Loop through your sets and collect the variable names and values
-for i in i_set:
-    for t in t_set:
-        data_C['Variable'].append(f'C[{i}, {t}]')
-        data_C['Value'].append(model.C[i, t].value)
 
+data_obj['Value'].append(obj)
+df=pd.DataFrame(data_obj)
+
+data_transp['Value'].append(total_transp_value)
+
+
+for i in i_set:
+   
+    data_Z['Variable'].append(f'Z{i}]')
+    data_Z['Value'].append(model.Z[i].value)
+ 
+    
+        
 for l in l_set:
     for t in t_set:
         data_P['Variable'].append(f'P[{l}, {t}]')
@@ -267,27 +376,80 @@ for l in l_set:
         data_I['Variable'].append(f'I[{j}, {t}]')
         data_I['Value'].append(model.I[j, t].value)
 
-        data_X['Variable'].append(f'X[{l}, {t}]')
-        data_X['Value'].append(model.X[l, t].value)
+        data_X['Variable'].append(f'X[{l}]')
+        data_X['Value'].append(model.X[l].value)
+        
+        data_IB['Variable'].append(f'IB[{l}, {t}]')
+        data_IB['Value'].append(model.IB[l, t].value)
 
-        for k in k_set:
-            for r in r_set:
-                for t in t_set:
-                    data_QD['Variable'].append(f'QD[{l}, {k}, {r}, {t}]')
-                    data_QD['Value'].append(model.QD[l, k, r, t].value)
+for l in l_set:
+    for k in k_set:
+        for r in r_set:
+            for t in t_set:
+                data_QBB['Variable'].append(f'QBB[{l}, {k}, {r}, {t}]')
+                data_QBB['Value'].append(model.QBB[l, k, r, t].value)
+        
+           
+for j in j_set:
+    for l in l_set:
+        for t in t_set:
+                data_QBC['Variable'].append(f'QBC[{j}, {l}, {t}]')
+                data_QBC['Value'].append(model.QBC[j, k, t].value)
 
+for j in j_set:
+    for t in t_set:
+        data_SP['Variable'].append(f'SP[{j}, {t}]')
+        data_SP['Value'].append(model.SP[j, t].value)
+        
+for i in i_set:
+    for j in j_set:
+        for t in t_set:
+            data_Q['Variable'].append(f'Q {i}, [{j}, {t}]')
+            data_Q['Value'].append(model.Q[i, j, t].value)        
+            
+
+for j in j_set:
+    for t in t_set:
+            data_Y['Variable'].append(f'Y{j}')
+            data_Y['Value'].append(model.Y[j].value)     
+
+for i in i_set:
+    for t in t_set:                     
+        data_HC['Variable'].append(f'HC{i,t}]')
+        data_HC['Value'].append(model.HC[i,t].value)
+        data_C['Variable'].append(f'C[{i}]') 
+        data_C['Value'].append(model.C[i,t].value)  
+        
+        
 # Create DataFrames from the collected data
 df_C = pd.DataFrame(data_C)
+df_IB = pd.DataFrame(data_IB)
 df_P = pd.DataFrame(data_P)
 df_I = pd.DataFrame(data_I)
 df_X = pd.DataFrame(data_X)
-df_QD = pd.DataFrame(data_QD)
+df_QBB = pd.DataFrame(data_QBB)
+df_HC = pd.DataFrame(data_HC)
+df_QBB = pd.DataFrame(data_QBB)
+df_Q= pd.DataFrame(data_Q)
+df_SP= pd.DataFrame(data_SP)
+df_Y= pd.DataFrame(data_Y)
+df_Z= pd.DataFrame(data_Z)
+df_transp=pd.DataFrame(data_transp)
+
 
 # Save each DataFrame to a separate sheet in an Excel file
-with pd.ExcelWriter('output.xlsx') as writer:
+with pd.ExcelWriter('base.xlsx') as writer:
     df_C.to_excel(writer, sheet_name='C')
     df_P.to_excel(writer, sheet_name='P')
     df_I.to_excel(writer, sheet_name='I')
+    df_IB.to_excel(writer, sheet_name='IB')
     df_X.to_excel(writer, sheet_name='X')
-    df_QD.to_excel(writer, sheet_name='QD')            
-            
+    df_QBB.to_excel(writer, sheet_name='QBB')            
+    df_HC.to_excel(writer, sheet_name='HC')
+    df_QBB.to_excel(writer, sheet_name='QBB')
+    df_Q.to_excel(writer, sheet_name='Q')
+    df_SP.to_excel(writer, sheet_name='SP')
+    df_Y.to_excel(writer, sheet_name='Y')
+    df_Z.to_excel(writer, sheet_name='Z')
+    df.to_excel(writer, sheet_name='Obj')
+    df_transp.to_excel(writer, sheet_name='transp')
