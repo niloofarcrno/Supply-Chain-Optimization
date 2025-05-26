@@ -10,7 +10,7 @@ area_hectares = {
     'ARRATIA-NERVION': 14404.5967,
     'CANTABRICA ALAVESA': 8833.0665,
     'ENCARTACIONE': 10465.1737,
-    'STRIBACIONESDEL GORBEA': 2778.8199,
+    'ESTRIBACIONESDEL GORBEA': 2778.8199,
     'GRANBILBAO': 3491.2616
 }
 
@@ -19,10 +19,17 @@ supplier_yields = {
     'ARRATIA-NERVION': 12.0,
     'CANTABRICA ALAVESA': 10.0,
     'ENCARTACIONE': 14.0,
-    'STRIBACIONESDEL GORBEA': 9.0,
-    'GRAN BILBAO': 8.0
+    'ESTRIBACIONESDEL GORBEA': 9.0,
+    'GRANBILBAO': 8.0
 }
+# Adjust harvesting cost per tonne based on yield (lower yield → higher cost)
+base_cost = 50  # cost for average yield (e.g., 10 t/ha)
+avg_yield = sum(supplier_yields.values()) / len(supplier_yields)
 
+harvest_cost_per_tonne = {
+    s: round(base_cost * (avg_yield / supplier_yields[s]), 2)
+    for s in supplier_yields
+}
 # Define a Quality Index (QI) per supplier based on literature-informed assumptions (0 to 1 scale)
 # Higher value = better quality (density, fewer defects, better log dimensions)
 quality_index = {
@@ -30,7 +37,7 @@ quality_index = {
     'CANTABRICA ALAVESA': 0.75,  # Medium quality, inland
     'ENCARTACIONE': 0.85,        # Good conditions, coastal influence
     'ESTRIBACIONESDEL GORBEA': 0.70,  # Lower quality, mountain edge
-    'GRAN BILBAO': 0.65          # Urban fringe, more variable quality
+    'GRANBILBAO': 0.65          # Urban fringe, more variable quality
 }
 # Compute effective yields
 effective_yields = {
@@ -65,12 +72,12 @@ price_nano = 3000
 daily_lumber_tonnes = 120
 daily_nano_tonnes = 24
 daily_log_input_tonnes = 208
-lumber_conversion = daily_lumber_tonnes / daily_log_input_tonnes
-nano_conversion = daily_nano_tonnes / daily_log_input_tonnes
+lumber_conversion = 0.6
+nano_conversion = 0.12
 annual_log_demand = daily_log_input_tonnes * days_per_year
 fuel_cost_per_km_per_tonne = 0.044 * 1.51
-harvest_cost_per_tonne = 50
-
+max_annual_lumber_output = 300 * 240  # = 72,000 tonnes/year-sawmil capacity
+max_annual_nano_output = 113 * 240    # = 27,120 tonnes/year-sawmil capacity 
 # -------------------------------
 # Haversine Distance Function
 # -------------------------------
@@ -96,7 +103,15 @@ model.y_lumber = Var(model.F, domain=NonNegativeReals)         # Output lumber
 model.y_nano = Var(model.F, domain=NonNegativeReals)           # Output nano-cellulose
 
 # Constraints
+# Maximum processing capacity constraint: Lumber
+def lumber_capacity_limit(m):
+    return sum(m.y_lumber[f] for f in m.F) <= 72000
+model.lumber_capacity_limit = Constraint(rule=lumber_capacity_limit)
 
+# Maximum processing capacity constraint: Nano-cellulose
+def nano_capacity_limit(m):
+    return sum(m.y_nano[f] for f in m.F) <= 27120
+model.nano_capacity_limit = Constraint(rule=nano_capacity_limit)
 # Harvest cannot exceed allowable cut per supplier
 def harvest_limit(m, s):
     return sum(m.x[s, f] for f in m.F) <= aac_tonnes[s]
@@ -124,7 +139,7 @@ model.demand_constraint = Constraint(rule=demand_constraint)
 # Objective function: Maximize profit = revenue - harvesting - transportation
 def objective_rule(m):
     revenue = sum(m.y_lumber[f] * price_lumber + m.y_nano[f] * price_nano for f in m.F)
-    harvest_cost = sum(m.x[s, f] * harvest_cost_per_tonne for s in m.S for f in m.F)
+    harvest_cost = sum(m.x[s, f] * harvest_cost_per_tonne[s] for s in m.S for f in m.F)
     transport_cost = sum(
         m.x[s, f] * fuel_cost_per_km_per_tonne * haversine(
             supplier_coords[s][0], supplier_coords[s][1],
@@ -161,11 +176,32 @@ for s in model.S:
             })
 
             harvested_per_supplier[s] += val
+            
+ff = list(model.F)[0]  # Only one facility
+lumber_output = model.y_lumber[f].value
+nano_output = model.y_nano[f].value
 
-# Convert to DataFrame for main results
-df_results = pd.DataFrame(results)
-print("\n--- Optimized Supplier Flows ---")
-print(df_results)
+print(f"\n--- Output Products at {f} ---")
+print(f"Lumber Production: {lumber_output:.2f} tonnes")
+print(f"Nano-cellulose Production: {nano_output:.2f} tonnes")
+
+
+# Harvesting cost
+total_harvest_cost = sum(
+    model.x[s, f].value * harvest_cost_per_tonne[s] for s in model.S for f in model.F if model.x[s, f].value
+)
+
+# Transportation cost
+total_transport_cost = sum(
+    model.x[s, f].value * fuel_cost_per_km_per_tonne * haversine(
+        supplier_coords[s][0], supplier_coords[s][1],
+        facilities[f]['lat'], facilities[f]['lon']
+    ) for s in model.S for f in model.F if model.x[s, f].value
+)
+
+# -------------------------------
+# Output: Objective Function Value (Profit)
+# -------------------------------
 
 # Print harvested tonnes and hectares per supplier
 print("\n--- Total Harvested per Supplier ---")
@@ -173,3 +209,24 @@ for s, tonnes in harvested_per_supplier.items():
     hectares = tonnes / supplier_yields[s]
     harvested_hectares[s] = hectares
     print(f"{s}: {round(tonnes, 2)} tonnes → {round(hectares, 2)} hectares")
+    
+    
+print(f"\n--- Cost Breakdown ---")
+print(f"Harvesting Cost: ${total_harvest_cost:.2f}")
+print(f"Transportation Cost: ${total_transport_cost:.2f}")
+
+# Compute Revenue
+total_revenue = sum(
+    model.y_lumber[f].value * price_lumber + model.y_nano[f].value * price_nano
+    for f in model.F
+)
+
+# Compute Objective Function Value (Total Profit)
+total_profit = total_revenue - total_harvest_cost - total_transport_cost
+
+# Print results
+print(f"\n--- Revenue ---")
+print(f"Total Revenue: ${total_revenue:.2f}")
+
+print(f"\n--- Objective Function ---")
+print(f"Total Profit: ${total_profit:.2f}")
